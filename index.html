@@ -2,64 +2,73 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>AI Fitness Counter with Controls</title>
+  <title>AI Universal Fitness Counter</title>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
 
   <style>
-    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; background: #1a1a1a; color: white; margin: 0; padding: 20px; }
-    .container { position: relative; display: inline-block; background: #2d2d2d; padding: 15px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-    canvas { border-radius: 15px; background: #000; max-width: 100%; height: auto; }
+    body { font-family: 'Kanit', sans-serif; text-align: center; background: #121212; color: white; margin: 0; padding: 20px; }
+    .container { position: relative; display: inline-block; background: #1e1e1e; padding: 15px; border-radius: 20px; box-shadow: 0 0 20px rgba(0,255,0,0.2); }
+    canvas { border-radius: 15px; background: #000; width: 100%; max-width: 640px; height: auto; }
+    
+    .menu { margin-bottom: 20px; display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
+    select { padding: 10px; border-radius: 8px; font-size: 16px; background: #333; color: white; border: 1px solid #4CAF50; }
     
     .controls { margin-top: 20px; display: flex; justify-content: center; gap: 10px; }
-    button { padding: 12px 25px; font-size: 16px; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; transition: 0.3s; }
+    button { padding: 12px 25px; font-size: 16px; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; transition: 0.2s; }
     
     #btnStart { background: #4CAF50; color: white; }
-    #btnStart:hover { background: #45a049; }
     #btnStop { background: #f44336; color: white; }
-    #btnStop:hover { background: #da190b; }
-    #btnReset { background: #2196F3; color: white; }
-    #btnReset:hover { background: #0b7dda; }
-    button:disabled { background: #555 !important; cursor: not-allowed; }
+    #btnReset { background: #555; color: white; }
+    button:active { transform: scale(0.95); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
 
     #stats {
-      position: absolute; top: 30px; left: 30px; text-align: left;
-      background: rgba(0,0,0,0.7); padding: 15px; border-radius: 12px; border: 1px solid #555;
+      position: absolute; top: 25px; left: 25px; text-align: left;
+      background: rgba(0,0,0,0.8); padding: 15px; border-radius: 12px; border-left: 5px solid #4CAF50;
     }
-    .counter-text { font-size: 54px; color: #4CAF50; font-weight: bold; margin: 5px 0; }
-    .status-badge { padding: 4px 10px; border-radius: 5px; font-size: 14px; background: #555; }
+    .counter-text { font-size: 60px; color: #4CAF50; font-weight: bold; line-height: 1; }
+    .mode-label { font-size: 14px; color: #aaa; text-transform: uppercase; }
     video { display: none; }
   </style>
 </head>
 
 <body>
-  <h1>AI Fitness Tracker</h1>
+  <h1>AI Fitness Multi-Trainer</h1>
   
+  <div class="menu">
+    <label for="exercise-select">เลือกท่าออกกำลังกาย: </label>
+    <select id="exercise-select">
+      <option value="bicep_curl">Bicep Curl (พับแขน)</option>
+      <option value="squat">Squat (ลุกนั่ง)</option>
+      <option value="pushup">Push-up (วิดพื้น)</option>
+    </select>
+  </div>
+
   <div class="container">
     <video id="input_video"></video>
     <canvas id="output_canvas" width="640" height="480"></canvas>
     
     <div id="stats">
-      <div id="mode_status" class="status-badge">READY</div>
-      <div style="margin-top:10px;">องศาแขน: <span id="angle_text">0</span>°</div>
-      <div class="counter-text"><span id="counter">0</span> REPS</div>
-      <div id="motion_state" style="color: #aaa;">-</div>
+      <div id="current-exercise" class="mode-label">BICEP CURL</div>
+      <div class="counter-text"><span id="counter">0</span></div>
+      <div id="status-text" style="font-size: 18px; color: #4CAF50;">READY</div>
     </div>
   </div>
 
   <div class="controls">
-    <button id="btnStart">เริ่มนับ (Start)</button>
-    <button id="btnStop" disabled>หยุด (Stop)</button>
-    <button id="btnReset">รีเซ็ต (Reset)</button>
+    <button id="btnStart">เริ่ม</button>
+    <button id="btnStop" disabled>หยุด</button>
+    <button id="btnReset">รีเซ็ต</button>
   </div>
 
   <script>
     const videoElement = document.getElementById('input_video');
     const canvasElement = document.getElementById('output_canvas');
     const canvasCtx = canvasElement.getContext('2d');
+    const exerciseSelect = document.getElementById('exercise-select');
     
-    // ตัวแปรควบคุมสถานะ
     let count = 0;
     let stage = 'down';
     let isRunning = false;
@@ -76,51 +85,35 @@
       canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
       canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
-      if (results.poseLandmarks) {
+      if (results.poseLandmarks && isRunning) {
         drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, {color: '#00FF00', lineWidth: 2});
-        drawLandmarks(canvasCtx, results.poseLandmarks, {color: '#FFFFFF', lineWidth: 1, radius: 3});
+        drawLandmarks(canvasCtx, results.poseLandmarks, {color: '#FFFFFF', lineWidth: 1, radius: 2});
 
-        // คำนวณเฉพาะเมื่อกด Start เท่านั้น
-        if (isRunning) {
-          const shoulder = results.poseLandmarks[11];
-          const elbow = results.poseLandmarks[13];
-          const wrist = results.poseLandmarks[15];
+        let angle = 0;
+        const ex = exerciseSelect.value;
 
-          const angle = calculateAngle(shoulder, elbow, wrist);
-          document.getElementById('angle_text').innerText = Math.round(angle);
-
-          // Logic การนับ
-          if (angle > 160) {
-              if (stage !== "down") {
-                  document.getElementById('motion_state').innerText = "เตรียมพับแขน...";
-              }
-              stage = "down";
-          }
-          if (angle < 30 && stage === "down") {
-              stage = "up";
-              count++;
-              document.getElementById('counter').innerText = count;
-              document.getElementById('motion_state').innerText = "เยี่ยมมาก! +1";
-              
-              // เพิ่ม Effect เสียงสั้นๆ (ถ้ามี) หรือเปลี่ยนสีตัวเลขชั่วคราว
-              document.getElementById('counter').style.color = "#white";
-              setTimeout(() => document.getElementById('counter').style.color = "#4CAF50", 300);
-          }
+        if (ex === "bicep_curl") {
+            angle = calculateAngle(results.poseLandmarks[11], results.poseLandmarks[13], results.poseLandmarks[15]);
+            if (angle > 160) stage = "down";
+            if (angle < 30 && stage === "down") { stage = "up"; count++; }
+        } else if (ex === "squat") {
+            angle = calculateAngle(results.poseLandmarks[23], results.poseLandmarks[25], results.poseLandmarks[27]);
+            if (angle > 160) stage = "up";
+            if (angle < 90 && stage === "up") { stage = "down"; count++; }
+        } else if (ex === "pushup") {
+            angle = calculateAngle(results.poseLandmarks[11], results.poseLandmarks[13], results.poseLandmarks[15]);
+            if (angle > 160) stage = "up";
+            if (angle < 80 && stage === "up") { stage = "down"; count++; }
         }
+
+        document.getElementById('counter').innerText = count;
+        document.getElementById('status-text').innerText = stage.toUpperCase();
       }
       canvasCtx.restore();
     }
 
-    const pose = new Pose({
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
-    });
-
-    pose.setOptions({
-      modelComplexity: 1,
-      smoothLandmarks: true,
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5
-    });
+    const pose = new Pose({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}` });
+    pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
     pose.onResults(onResults);
 
     const camera = new Camera(videoElement, {
@@ -129,40 +122,31 @@
     });
     camera.start();
 
-    // --- ส่วนควบคุมปุ่มกด ---
-
-    const btnStart = document.getElementById('btnStart');
-    const btnStop = document.getElementById('btnStop');
-    const btnReset = document.getElementById('btnReset');
-    const modeStatus = document.getElementById('mode_status');
-
-    btnStart.onclick = () => {
-      isRunning = true;
-      btnStart.disabled = true;
-      btnStop.disabled = false;
-      modeStatus.innerText = "TRACKING";
-      modeStatus.style.background = "#4CAF50";
+    // Controls
+    document.getElementById('btnStart').onclick = () => {
+        isRunning = true;
+        document.getElementById('btnStart').disabled = true;
+        document.getElementById('btnStop').disabled = false;
+        document.getElementById('status-text').innerText = "GO!";
     };
 
-    btnStop.onclick = () => {
-      isRunning = false;
-      btnStart.disabled = false;
-      btnStop.disabled = true;
-      modeStatus.innerText = "PAUSED";
-      modeStatus.style.background = "#f44336";
+    document.getElementById('btnStop').onclick = () => {
+        isRunning = false;
+        document.getElementById('btnStart').disabled = false;
+        document.getElementById('btnStop').disabled = true;
+        document.getElementById('status-text').innerText = "PAUSED";
     };
 
-    btnReset.onclick = () => {
-      count = 0;
-      stage = 'down';
-      document.getElementById('counter').innerText = "0";
-      document.getElementById('motion_state').innerText = "รีเซ็ตแล้ว";
-      if (!isRunning) {
-          modeStatus.innerText = "READY";
-          modeStatus.style.background = "#555";
-      }
+    document.getElementById('btnReset').onclick = () => {
+        count = 0;
+        document.getElementById('counter').innerText = "0";
     };
 
+    exerciseSelect.onchange = () => {
+        document.getElementById('current-exercise').innerText = exerciseSelect.options[exerciseSelect.selectedIndex].text;
+        count = 0;
+        document.getElementById('counter').innerText = "0";
+    };
   </script>
 </body>
 </html>
